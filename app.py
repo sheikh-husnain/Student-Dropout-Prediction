@@ -3,18 +3,14 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.linear_model import LogisticRegression
 
+
+# Page title
 st.title("Student Dropout Prediction")
 
 st.write("Enter student academic information to predict the student outcome.")
 
-df = pd.read_csv("data.csv", sep=";")
 
-X = df.drop("Target", axis=1)
-y = df["Target"]
-
-label_encoder = LabelEncoder()
-y_encoded = label_encoder.fit_transform(y)
-
+# Categorical columns
 categorical_columns = [
     "Marital status",
     "Application mode",
@@ -35,15 +31,41 @@ categorical_columns = [
     "International"
 ]
 
-X_encoded = pd.get_dummies(
-    X,
-    columns=categorical_columns,
-    drop_first=True
-)
 
-model = LogisticRegression(max_iter=10000)
-model.fit(X_encoded, y_encoded)
+# Train model only once and reuse it
+@st.cache_resource
+def train_model():
 
+    # Load dataset
+    df = pd.read_csv("data.csv", sep=";")
+
+    # Separate features and target
+    X = df.drop("Target", axis=1)
+    y = df["Target"]
+
+    # Encode target
+    label_encoder = LabelEncoder()
+    y_encoded = label_encoder.fit_transform(y)
+
+    # One-hot encoding
+    X_encoded = pd.get_dummies(
+        X,
+        columns=categorical_columns,
+        drop_first=True
+    )
+
+    # Train Logistic Regression model
+    model = LogisticRegression(max_iter=10000)
+    model.fit(X_encoded, y_encoded)
+
+    return df, X_encoded, model, label_encoder
+
+
+# Load the trained model
+df, X_encoded, model, label_encoder = train_model()
+
+
+# Student inputs
 st.header("Student Information")
 
 age = st.number_input(
@@ -81,35 +103,44 @@ second_grade = st.number_input(
     value=float(df["Curricular units 2nd sem (grade)"].iloc[0])
 )
 
+
+# Prediction
 if st.button("Predict"):
 
+    # Use first dataset row as the base student
     student = df.iloc[[0]].drop("Target", axis=1).copy()
 
+    # Replace selected values with user inputs
     student["Age at enrollment"] = age
     student["Curricular units 1st sem (approved)"] = first_approved
     student["Curricular units 1st sem (grade)"] = first_grade
     student["Curricular units 2nd sem (approved)"] = second_approved
     student["Curricular units 2nd sem (grade)"] = second_grade
 
+    # Encode student data
     student_encoded = pd.get_dummies(
         student,
         columns=categorical_columns,
         drop_first=True
     )
 
+    # Make sure student has exactly the same features as training data
     student_encoded = student_encoded.reindex(
         columns=X_encoded.columns,
         fill_value=0
     )
 
+    # Make prediction
     prediction = model.predict(student_encoded)
-
     probabilities = model.predict_proba(student_encoded)
 
+    # Convert prediction back to original class name
     predicted_class = label_encoder.inverse_transform(prediction)[0]
 
+    # Dropout probability
     dropout_probability = probabilities[0][0]
 
+    # Risk level
     if dropout_probability >= 0.70:
         risk_level = "High Risk"
     elif dropout_probability >= 0.40:
@@ -117,9 +148,13 @@ if st.button("Predict"):
     else:
         risk_level = "Low Risk"
 
+    # Display result
     st.subheader("Prediction Result")
 
-    st.write("Predicted Outcome:", predicted_class)
+    st.write(
+        "Predicted Outcome:",
+        predicted_class
+    )
 
     st.write(
         "Dropout Probability:",
@@ -127,8 +162,12 @@ if st.button("Predict"):
         "%"
     )
 
-    st.write("Risk Level:", risk_level)
+    st.write(
+        "Risk Level:",
+        risk_level
+    )
 
+    # Display all probabilities
     st.subheader("Class Probabilities")
 
     st.write(
